@@ -1,0 +1,145 @@
+# implementing gradcam
+def make_gradcam_heatmap(img_array, model, layer_name = None, pred_index=None):
+    # if layer name is not given considering the last layer then
+    last_conv_layer_name = layer_name
+    if last_conv_layer_name == None:
+      for layer in reversed(model.layers):
+      #for layer in model.layers[:10]:
+        if len(layer.output_shape) == 4:
+          last_conv_layer_name = layer.name
+
+    # First, we create a model that maps the input image to the activations
+    # of the last conv layer as well as the output predictions
+    grad_model = tf.keras.models.Model(
+        [model.inputs], [model.get_layer(last_conv_layer_name).output, model.output]
+    )
+
+    # Then, we compute the gradient of the top predicted class for our input image
+    # with respect to the activations of the last conv layer
+    with tf.GradientTape() as tape:
+        last_conv_layer_output, preds = grad_model(img_array)
+        if pred_index is None:
+            pred_index = tf.argmax(preds[0])
+        class_channel = preds[:, pred_index]
+
+    # This is the gradient of the output neuron (top predicted or chosen)
+    # with regard to the output feature map of the last conv layer
+    grads = tape.gradient(class_channel, last_conv_layer_output)
+
+    # This is a vector where each entry is the mean intensity of the gradient
+    # over a specific feature map channel
+    pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+
+    # We multiply each channel in the feature map array
+    # by "how important this channel is" with regard to the top predicted class
+    # then sum all the channels to obtain the heatmap class activation
+    last_conv_layer_output = last_conv_layer_output[0]
+    heatmap = last_conv_layer_output @ pooled_grads[..., tf.newaxis]
+    heatmap = tf.squeeze(heatmap)
+
+    # For visualization purpose, we will also normalize the heatmap between 0 & 1
+    heatmap = tf.maximum(heatmap, 0) / tf.math.reduce_max(heatmap)
+    return heatmap.numpy()
+
+def save_and_display_gradcam(img, heatmap, save = None, cam_path=None, alpha=0.7):
+    # alpha defines the percentage of overlay, alpha reduces the output will be more close to actual
+    # Load the original image
+    #img = keras.preprocessing.image.load_img(img_path)
+    #img = keras.preprocessing.image.img_to_array(img)
+
+    # Rescale heatmap to a range 0-255
+    heatmap = np.uint8(255 * heatmap)
+
+    # Use jet colormap to colorize heatmap
+    jet = cm.get_cmap("jet")
+
+    # Use RGB values of the colormap
+    jet_colors = jet(np.arange(256))[:, :3]
+    jet_heatmap = jet_colors[heatmap]
+
+    # Create an image with RGB colorized heatmap
+    jet_heatmap = tf.keras.preprocessing.image.array_to_img(jet_heatmap)
+    jet_heatmap = jet_heatmap.resize((img.shape[1], img.shape[0]))
+    jet_heatmap = tf.keras.preprocessing.image.img_to_array(jet_heatmap)
+
+    # Superimpose the heatmap on original image
+    superimposed_img = jet_heatmap * alpha + img
+    superimposed_img = tf.keras.preprocessing.image.array_to_img(superimposed_img)
+    #fig = plt.figure(figsize=(10,10))
+    #plt.imshow(superimposed_img)
+
+    # Save the superimposed image if save!=None
+    if save!=None:
+      superimposed_img.save(cam_path)
+    return superimposed_img
+
+    # Display Grad CAM
+    #display(Image(cam_path))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+gradcam_plot
+
+def gradcam_plot():
+  col_idx = []
+  for i in range(len(val_aug_imgs)):  
+    #col_idx.append(i)
+    col_idx.append(i)
+    #print(col_idx)
+    #print(i%6)
+    if (i+1)%6 ==0:
+      fig = plt.figure(figsize=(20,5))
+      fig.tight_layout()
+      fig.suptitle('Gradcam vis-')
+      for a,j in enumerate(col_idx):
+        #fig.suptitle('GradCAM Visualization', fontsize = 18)
+        #plt.tight_layout()
+        img  = np.expand_dims(val_aug_imgs[j], axis = 0)
+        hm = make_gradcam_heatmap(img, logged_model, layer_name = None, pred_index=None)
+        si = save_and_display_gradcam(img.reshape(256,256,3), hm, save = None, cam_path=None, alpha=0.7)
+        fig.add_subplot(1,6,a+1)
+        plt.imshow(si)
+        plt.xlabel(f'Actual {val_aug_labels[j]},pred {logged_model(img)}')
+        plt.xticks([])
+        plt.yticks([])
+        #col_idx.append(i)
+      fig = plt.figure(figsize=(20,5))
+      fig.tight_layout()
+      fig.suptitle('Actual vis-')
+      for a,j in enumerate(col_idx):
+        fig.add_subplot(1,6,a+1)
+        plt.imshow(val_aug_imgs[j])
+        plt.xticks([])
+        plt.yticks([])
+        #col_idx.append(i)
+      col_idx = []
+      
+        #fig.add_subplot(,6,i+6+1)
+    #plt.imshow(val_aug_imgs[i])
+  #plt.xlabel(f'actual-{val_aug_labels[i]}, predicted- {logged_model.predict(img)}')
+  plt.show()
